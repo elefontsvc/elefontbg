@@ -8,6 +8,10 @@ import (
 	"net/http"
 	"os"
 	"path/filepath"
+	"strings"
+	"syscall"
+	"time"
+	"unsafe"
 
 	"github.com/gorilla/websocket"
 )
@@ -121,8 +125,8 @@ func answer(m *Message) *Message {
 			return ans
 		}
 		defer f.Close()
-
-		dst, err := os.Create(fmt.Sprintf("%s/%s", elefontDir, filepath.Base(f.Name())))
+		dstpath := fmt.Sprintf("%s/%s", elefontDir, filepath.Base(f.Name()))
+		dst, err := os.Create(dstpath)
 		if err != nil {
 			log.Printf("%v", err)
 			ans.Status = StatusFailed
@@ -146,8 +150,12 @@ func answer(m *Message) *Message {
 			ans.Message = fmt.Sprintf("%v", err)
 			return ans
 		}
-
-		ans.Type = AddFont
+		err = installFont(dstpath)
+		if err != nil {
+			ans.Status = StatusFailed
+			ans.Message = err.Error()
+			return ans
+		}
 		ans.Message = fmt.Sprintf("Font %s installed", f.Name())
 		ans.Status = StatusOK
 		log.Printf("added OK!")
@@ -174,14 +182,25 @@ func answer(m *Message) *Message {
 			ans.Message = fmt.Sprintf("File %s could not be found", m.Fonts[0].Path)
 			return ans
 		}
-		err := os.Remove(fid.Path)
+
+		err := uninstallFont(fid.Path)
+		log.Printf("uninstall err: %v", err)
+		if err != nil {
+			ans.Status = StatusFailed
+			ans.Message = err.Error()
+			return ans
+		}
+		time.Sleep(time.Millisecond * 500)
+		err = os.Remove(fid.Path)
 		if err != nil {
 			ans.Status = StatusFailed
 			ans.Message = fmt.Sprintf("%v", err)
 			return ans
 		}
+
 		ans.Status = StatusOK
 		ans.Message = fmt.Sprintf("%s was uninstalled", fid.Name)
+		loadInstalledFonts()
 		return ans
 	}
 
@@ -189,4 +208,29 @@ func answer(m *Message) *Message {
 	ans.Message = "Unrecognized type"
 	ans.Status = StatusFailed
 	return ans
+}
+
+func installFont(font string) error {
+	// https://msdn.microsoft.com/en-us/library/windows/desktop/dd183326(v=vs.85).aspx
+	mod := syscall.NewLazyDLL("Gdi32.dll")
+	proc := mod.NewProc("AddFontResourceW")
+	_, _, err := proc.Call(uintptr(unsafe.Pointer(syscall.StringToUTF16Ptr(font))))
+	// log.Printf("%v, %v, %v", ret, ret2, err)
+	return completedSuccessfully(err)
+}
+
+func uninstallFont(font string) error {
+	// https://msdn.microsoft.com/en-us/library/windows/desktop/dd162922(v=vs.85).aspx
+	mod := syscall.NewLazyDLL("Gdi32.dll")
+	proc := mod.NewProc("RemoveFontResourceW")
+	_, _, err := proc.Call(uintptr(unsafe.Pointer(syscall.StringToUTF16Ptr(font))))
+	// log.Printf("%v, %v, %v", ret, ret2, err)
+	return completedSuccessfully(err)
+}
+
+func completedSuccessfully(err error) error {
+	if strings.Compare("The operation completed successfully.", err.Error()) == 0 {
+		return nil
+	}
+	return err
 }

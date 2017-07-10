@@ -26,11 +26,13 @@ func init() {
 	elefontDir = fmt.Sprintf("%s/EleFont", strings.TrimSuffix(home, "/"))
 }
 
-var installedFonts = make(map[string]Font)
+var installedFonts map[string]Font
 
 func loadInstalledFonts() error {
 	// home := os.Getenv("USERPROFILE")
 	// elefontDir := fmt.Sprintf("%s/EleFont", strings.TrimSuffix(home, "/"))
+
+	installedFonts = make(map[string]Font)
 
 	if !elefontDirExists(elefontDir) {
 		createElefontDir(elefontDir)
@@ -50,6 +52,10 @@ func loadInstalledFonts() error {
 			tmp.ID = hh
 			tmp.Path = fpath
 			tmp.Name = f.Name()
+			if err := installFont(tmp.Path); err != nil {
+				log.Printf("could not install %s: %v", tmp.Path, err)
+				continue
+			}
 			installedFonts[tmp.ID] = tmp
 			log.Printf("%s has hash %s", tmp.Name, tmp.ID)
 		}
