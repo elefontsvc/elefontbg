@@ -154,6 +154,37 @@ func answer(m *Message) *Message {
 		loadInstalledFonts()
 		return ans
 	}
+
+	if m.Type == DelFont {
+		ans.Type = DelFont
+		log.Printf("uninstalling font")
+		if !(len(m.Fonts) > 0) {
+			ans.Status = StatusFailed
+			ans.Message = "No font was selected"
+			return ans
+		}
+		fid, ok := installedFonts[m.Fonts[0].ID]
+		log.Printf("%v", fid)
+		for _, ff := range installedFonts {
+			log.Printf("'%s' vs '%s'", ff.ID, m.Fonts[0].ID)
+		}
+
+		if !ok {
+			ans.Status = StatusFailed
+			ans.Message = fmt.Sprintf("File %s could not be found", m.Fonts[0].Path)
+			return ans
+		}
+		err := os.Remove(fid.Path)
+		if err != nil {
+			ans.Status = StatusFailed
+			ans.Message = fmt.Sprintf("%v", err)
+			return ans
+		}
+		ans.Status = StatusOK
+		ans.Message = fmt.Sprintf("%s was uninstalled", fid.Name)
+		return ans
+	}
+
 	ans.Type = Unknown
 	ans.Message = "Unrecognized type"
 	ans.Status = StatusFailed

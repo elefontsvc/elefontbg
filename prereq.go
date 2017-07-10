@@ -2,6 +2,7 @@ package main
 
 import (
 	"crypto/md5"
+	"encoding/base64"
 	"fmt"
 	"io"
 	"io/ioutil"
@@ -44,12 +45,13 @@ func loadInstalledFonts() error {
 		fpath := fmt.Sprintf("%s/%s", elefontDir, f.Name())
 		if validFont(fpath) {
 			b := md5.Sum([]byte(fpath))
+			hh := base64.StdEncoding.EncodeToString(b[:])
 			tmp := Font{}
-			tmp.ID = string(b[:])
+			tmp.ID = hh
 			tmp.Path = fpath
 			tmp.Name = f.Name()
 			installedFonts[tmp.ID] = tmp
-			// log.Printf("%s has hash %s", tmp.Name, tmp.ID)
+			log.Printf("%s has hash %s", tmp.Name, tmp.ID)
 		}
 	}
 	elog.Info(1, fmt.Sprintf("elefont have %d installed fonts", len(installedFonts)))
@@ -80,6 +82,7 @@ func validFont(fontfile string) bool {
 		elog.Error(1, fmt.Sprintf("could not open file '%s' for validation: %v", fontfile, err))
 		return false
 	}
+	defer f.Close()
 	buf := make([]byte, 512)
 	n, err := f.Read(buf)
 	if err != nil && err != io.EOF {
