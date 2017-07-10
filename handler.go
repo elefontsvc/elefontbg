@@ -7,6 +7,7 @@ import (
 	"log"
 	"net/http"
 	"os"
+	"path/filepath"
 
 	"github.com/gorilla/websocket"
 )
@@ -27,7 +28,7 @@ const (
 	DelFont
 	//GetFont tells the service to list all available fonts (installed and uninstalled)
 	GetFont
-	//Hearbeat is a heartbeat message
+	//Heartbeat is a heartbeat message
 	Heartbeat
 	//Unknown is to tell the endpoints there's no way of knowing what is going on
 	Unknown
@@ -121,7 +122,7 @@ func answer(m *Message) *Message {
 		}
 		defer f.Close()
 
-		dst, err := os.Create(fmt.Sprintf("%s/%s", elefontDir, f.Name()))
+		dst, err := os.Create(fmt.Sprintf("%s/%s", elefontDir, filepath.Base(f.Name())))
 		if err != nil {
 			log.Printf("%v", err)
 			ans.Status = StatusFailed
@@ -150,6 +151,7 @@ func answer(m *Message) *Message {
 		ans.Message = fmt.Sprintf("Font %s installed", f.Name())
 		ans.Status = StatusOK
 		log.Printf("added OK!")
+		loadInstalledFonts()
 		return ans
 	}
 	ans.Type = Unknown
