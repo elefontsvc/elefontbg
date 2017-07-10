@@ -1,2 +1,4 @@
 *.exe
 elefontbg
+data/*
+!data/.keep
