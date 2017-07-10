@@ -1,7 +1,13 @@
-# OUT = elefont
+OUT = elefontbg.exe
+# GOOS=$(GOOS) GOARCH=$(GOARCH) go build $(LDFLAGS)
 GOOS = windows
 GOARCH = amd64
-BUILDVERSION = `date +%y%m%d%H%M%S`
+ifeq ($(OS),Windows_NT)
+	BUILDVERSION =`%TIME%`
+else
+	BUILDVERSION =`date +%y%m%d%H%M%S`
+endif
+# BUILDVERSION = `date +%y%m%d%H%M%S`
 LDFLAGS = -ldflags "-X main.buildVersion=$(BUILDVERSION)"
 
 .PHONY: all build run
@@ -9,10 +15,10 @@ LDFLAGS = -ldflags "-X main.buildVersion=$(BUILDVERSION)"
 all: build
 
 build:
-	GOOS=$(GOOS) GOARCH=$(GOARCH) go build $(LDFLAGS) 
+	go build $(LDFLAGS)
 
 run:
-	./$(OUT)
+	./$(OUT) debug
 
 install: build
 	cp $(OUT) ../node_modules/.bin/$(OUT)

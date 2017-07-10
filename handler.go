@@ -3,8 +3,15 @@ package main
 import (
 	"encoding/json"
 	"fmt"
+	"io"
 	"log"
 	"net/http"
+	"os"
+	"path/filepath"
+	"strings"
+	"syscall"
+	"time"
+	"unsafe"
 
 	"github.com/gorilla/websocket"
 )
@@ -25,7 +32,7 @@ const (
 	DelFont
 	//GetFont tells the service to list all available fonts (installed and uninstalled)
 	GetFont
-	//Hearbeat is a heartbeat message
+	//Heartbeat is a heartbeat message
 	Heartbeat
 	//Unknown is to tell the endpoints there's no way of knowing what is going on
 	Unknown
@@ -101,13 +108,129 @@ func answer(m *Message) *Message {
 	}
 
 	if m.Type == AddFont {
+		//Copy the file to the elefontdir
+		log.Printf("adding font")
 		ans.Type = AddFont
-		ans.Message = "Should contain just a message or something"
+		if !(len(m.Fonts) > 0) {
+			ans.Status = StatusFailed
+			ans.Message = "No fonts were selected"
+			return ans
+		}
+
+		f, err := os.Open(m.Fonts[0].Path) //we only support one font at a time right now
+		if err != nil {
+			log.Printf("%v", err)
+			ans.Status = StatusFailed
+			ans.Message = fmt.Sprintf("%v", err)
+			return ans
+		}
+		defer f.Close()
+		dstpath := fmt.Sprintf("%s/%s", elefontDir, filepath.Base(f.Name()))
+		dst, err := os.Create(dstpath)
+		if err != nil {
+			log.Printf("%v", err)
+			ans.Status = StatusFailed
+			ans.Message = fmt.Sprintf("%v", err)
+			return ans
+		}
+		defer dst.Close()
+
+		_, err = io.Copy(dst, f)
+		if err != nil {
+			log.Printf("%v", err)
+			ans.Status = StatusFailed
+			ans.Message = fmt.Sprintf("%v", err)
+			return ans
+		}
+
+		err = dst.Sync()
+		if err != nil {
+			log.Printf("%v", err)
+			ans.Status = StatusFailed
+			ans.Message = fmt.Sprintf("%v", err)
+			return ans
+		}
+		err = installFont(dstpath)
+		if err != nil {
+			ans.Status = StatusFailed
+			ans.Message = err.Error()
+			return ans
+		}
+		ans.Message = fmt.Sprintf("Font %s installed", f.Name())
 		ans.Status = StatusOK
+		log.Printf("added OK!")
+		loadInstalledFonts()
 		return ans
 	}
+
+	if m.Type == DelFont {
+		ans.Type = DelFont
+		log.Printf("uninstalling font")
+		if !(len(m.Fonts) > 0) {
+			ans.Status = StatusFailed
+			ans.Message = "No font was selected"
+			return ans
+		}
+		fid, ok := installedFonts[m.Fonts[0].ID]
+		log.Printf("%v", fid)
+		for _, ff := range installedFonts {
+			log.Printf("'%s' vs '%s'", ff.ID, m.Fonts[0].ID)
+		}
+
+		if !ok {
+			ans.Status = StatusFailed
+			ans.Message = fmt.Sprintf("File %s could not be found", m.Fonts[0].Path)
+			return ans
+		}
+
+		err := uninstallFont(fid.Path)
+		log.Printf("uninstall err: %v", err)
+		if err != nil {
+			ans.Status = StatusFailed
+			ans.Message = err.Error()
+			return ans
+		}
+		time.Sleep(time.Millisecond * 500)
+		err = os.Remove(fid.Path)
+		if err != nil {
+			ans.Status = StatusFailed
+			ans.Message = fmt.Sprintf("%v", err)
+			return ans
+		}
+
+		ans.Status = StatusOK
+		ans.Message = fmt.Sprintf("%s was uninstalled", fid.Name)
+		loadInstalledFonts()
+		return ans
+	}
+
 	ans.Type = Unknown
 	ans.Message = "Unrecognized type"
 	ans.Status = StatusFailed
 	return ans
+}
+
+func installFont(font string) error {
+	// https://msdn.microsoft.com/en-us/library/windows/desktop/dd183326(v=vs.85).aspx
+	mod := syscall.NewLazyDLL("Gdi32.dll")
+	proc := mod.NewProc("AddFontResourceW")
+	_, _, err := proc.Call(uintptr(unsafe.Pointer(syscall.StringToUTF16Ptr(font))))
+	// log.Printf("%v, %v, %v", ret, ret2, err)
+	return completedSuccessfully(err)
+}
+
+func uninstallFont(font string) error {
+	// https://msdn.microsoft.com/en-us/library/windows/desktop/dd162922(v=vs.85).aspx
+	mod := syscall.NewLazyDLL("Gdi32.dll")
+	proc := mod.NewProc("RemoveFontResourceW")
+	_, _, err := proc.Call(uintptr(unsafe.Pointer(syscall.StringToUTF16Ptr(font))))
+	// log.Printf("%v, %v, %v", ret, ret2, err)
+	return completedSuccessfully(err)
+}
+
+func completedSuccessfully(err error) error {
+	if strings.Compare("The operation completed successfully.", err.Error()) == 0 {
+		return nil
+	}
+	return err
 }

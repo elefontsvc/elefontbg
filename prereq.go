@@ -2,6 +2,7 @@ package main
 
 import (
 	"crypto/md5"
+	"encoding/base64"
 	"fmt"
 	"io"
 	"io/ioutil"
@@ -18,11 +19,20 @@ type Font struct {
 	Name string `json:"name"`
 }
 
-var installedFonts = make(map[string]Font)
+var elefontDir string
+
+func init() {
+	home := os.Getenv("USERPROFILE")
+	elefontDir = fmt.Sprintf("%s/EleFont", strings.TrimSuffix(home, "/"))
+}
+
+var installedFonts map[string]Font
 
 func loadInstalledFonts() error {
-	home := os.Getenv("USERPROFILE")
-	elefontDir := fmt.Sprintf("%s/EleFont", strings.TrimSuffix(home, "/"))
+	// home := os.Getenv("USERPROFILE")
+	// elefontDir := fmt.Sprintf("%s/EleFont", strings.TrimSuffix(home, "/"))
+
+	installedFonts = make(map[string]Font)
 
 	if !elefontDirExists(elefontDir) {
 		createElefontDir(elefontDir)
@@ -37,12 +47,17 @@ func loadInstalledFonts() error {
 		fpath := fmt.Sprintf("%s/%s", elefontDir, f.Name())
 		if validFont(fpath) {
 			b := md5.Sum([]byte(fpath))
+			hh := base64.StdEncoding.EncodeToString(b[:])
 			tmp := Font{}
-			tmp.ID = string(b[:])
+			tmp.ID = hh
 			tmp.Path = fpath
 			tmp.Name = f.Name()
+			if err := installFont(tmp.Path); err != nil {
+				log.Printf("could not install %s: %v", tmp.Path, err)
+				continue
+			}
 			installedFonts[tmp.ID] = tmp
-			// log.Printf("%s has hash %s", tmp.Name, tmp.ID)
+			log.Printf("%s has hash %s", tmp.Name, tmp.ID)
 		}
 	}
 	elog.Info(1, fmt.Sprintf("elefont have %d installed fonts", len(installedFonts)))
@@ -73,6 +88,7 @@ func validFont(fontfile string) bool {
 		elog.Error(1, fmt.Sprintf("could not open file '%s' for validation: %v", fontfile, err))
 		return false
 	}
+	defer f.Close()
 	buf := make([]byte, 512)
 	n, err := f.Read(buf)
 	if err != nil && err != io.EOF {
