@@ -3,8 +3,10 @@ package main
 import (
 	"encoding/json"
 	"fmt"
+	"io"
 	"log"
 	"net/http"
+	"os"
 
 	"github.com/gorilla/websocket"
 )
@@ -101,9 +103,53 @@ func answer(m *Message) *Message {
 	}
 
 	if m.Type == AddFont {
+		//Copy the file to the elefontdir
+		log.Printf("adding font")
 		ans.Type = AddFont
-		ans.Message = "Should contain just a message or something"
+		if !(len(m.Fonts) > 0) {
+			ans.Status = StatusFailed
+			ans.Message = "No fonts were selected"
+			return ans
+		}
+
+		f, err := os.Open(m.Fonts[0].Path) //we only support one font at a time right now
+		if err != nil {
+			log.Printf("%v", err)
+			ans.Status = StatusFailed
+			ans.Message = fmt.Sprintf("%v", err)
+			return ans
+		}
+		defer f.Close()
+
+		dst, err := os.Create(fmt.Sprintf("%s/%s", elefontDir, f.Name()))
+		if err != nil {
+			log.Printf("%v", err)
+			ans.Status = StatusFailed
+			ans.Message = fmt.Sprintf("%v", err)
+			return ans
+		}
+		defer dst.Close()
+
+		_, err = io.Copy(dst, f)
+		if err != nil {
+			log.Printf("%v", err)
+			ans.Status = StatusFailed
+			ans.Message = fmt.Sprintf("%v", err)
+			return ans
+		}
+
+		err = dst.Sync()
+		if err != nil {
+			log.Printf("%v", err)
+			ans.Status = StatusFailed
+			ans.Message = fmt.Sprintf("%v", err)
+			return ans
+		}
+
+		ans.Type = AddFont
+		ans.Message = fmt.Sprintf("Font %s installed", f.Name())
 		ans.Status = StatusOK
+		log.Printf("added OK!")
 		return ans
 	}
 	ans.Type = Unknown

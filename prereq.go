@@ -18,11 +18,18 @@ type Font struct {
 	Name string `json:"name"`
 }
 
+var elefontDir string
+
+func init() {
+	home := os.Getenv("USERPROFILE")
+	elefontDir = fmt.Sprintf("%s/EleFont", strings.TrimSuffix(home, "/"))
+}
+
 var installedFonts = make(map[string]Font)
 
 func loadInstalledFonts() error {
-	home := os.Getenv("USERPROFILE")
-	elefontDir := fmt.Sprintf("%s/EleFont", strings.TrimSuffix(home, "/"))
+	// home := os.Getenv("USERPROFILE")
+	// elefontDir := fmt.Sprintf("%s/EleFont", strings.TrimSuffix(home, "/"))
 
 	if !elefontDirExists(elefontDir) {
 		createElefontDir(elefontDir)
