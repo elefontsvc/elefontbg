@@ -15,6 +15,7 @@ type Message struct {
 	Type    int    `json:"type"`
 	Message string `json:"message"`
 	Status  int    `json:"status"`
+	Fonts   []Font `json:"fonts,omitempty"`
 }
 
 const (
@@ -69,12 +70,6 @@ func wsHandler(w http.ResponseWriter, r *http.Request) {
 			continue
 		}
 		ans := answer(&mess)
-		// ans := Message{
-		// 	Type:    mess.Type,
-		// 	Status:  StatusOK,
-		// 	Message: "this is a response",
-		// 	Version: 1,
-		// }
 		ans.Version = 1 //Currently, this is the only supported protocol
 
 		log.Printf("rcv: '%+v'", mess)
@@ -96,8 +91,12 @@ func wsHandler(w http.ResponseWriter, r *http.Request) {
 func answer(m *Message) *Message {
 	ans := &Message{}
 	if m.Type == GetFont {
+		for _, f := range installedFonts {
+			ans.Fonts = append(ans.Fonts, f)
+		}
 		ans.Type = GetFont
-		ans.Message = "Should contain a list of all available fonts, with their respective ID:s"
+		ans.Message = ""
+		ans.Status = StatusOK
 		return ans
 	}
 

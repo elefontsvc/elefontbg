@@ -1,6 +1,7 @@
 package main
 
 import (
+	"crypto/md5"
 	"fmt"
 	"io"
 	"io/ioutil"
@@ -10,6 +11,14 @@ import (
 
 	filetype "gopkg.in/h2non/filetype.v1"
 )
+
+type Font struct {
+	ID   string `json:"id"`
+	Path string `json:"path"`
+	Name string `json:"name"`
+}
+
+var installedFonts = make(map[string]Font)
 
 func loadInstalledFonts() error {
 	home := os.Getenv("USERPROFILE")
@@ -23,10 +32,21 @@ func loadInstalledFonts() error {
 	if err != nil {
 		return err
 	}
+
 	for _, f := range files {
 		fpath := fmt.Sprintf("%s/%s", elefontDir, f.Name())
-		log.Printf("%s is a %t", f.Name(), validFont(fpath))
+		if validFont(fpath) {
+			b := md5.Sum([]byte(fpath))
+			tmp := Font{}
+			tmp.ID = string(b[:])
+			tmp.Path = fpath
+			tmp.Name = f.Name()
+			installedFonts[tmp.ID] = tmp
+			// log.Printf("%s has hash %s", tmp.Name, tmp.ID)
+		}
 	}
+	elog.Info(1, fmt.Sprintf("elefont have %d installed fonts", len(installedFonts)))
+	// log.Printf("%+v", installedFonts)
 	return nil
 }
 
@@ -42,6 +62,7 @@ func elefontDirExists(dir string) bool {
 func createElefontDir(dir string) {
 	err := os.Mkdir(dir, os.ModePerm)
 	if err != nil {
+		elog.Error(1, fmt.Sprintf("could not create elefont dir: %v", err))
 		log.Fatalf("could not create elefont dir: %v", err)
 	}
 }
