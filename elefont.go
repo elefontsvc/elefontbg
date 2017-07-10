@@ -2,7 +2,6 @@ package main
 
 import (
 	"context"
-	"encoding/json"
 	"fmt"
 	"log"
 	"net/http"
@@ -15,47 +14,11 @@ import (
 	"golang.org/x/sys/windows/svc/debug"
 	"golang.org/x/sys/windows/svc/eventlog"
 	"golang.org/x/sys/windows/svc/mgr"
-
-	"github.com/gorilla/websocket"
 )
 
-const (
-	//AddFont tells the service to add a specific font to the user space
-	AddFont = iota
-	//DelFont tells the service to remove a font from the user space
-	DelFont
-	//GetFont tells the service to list all available fonts (installed and uninstalled)
-	GetFont
-)
+var buildVersion string
 
-// https://jacobmartins.com/2016/03/07/practical-golang-using-websockets/
-// https://developer.mozilla.org/en-US/docs/Web/API/WebSockets_API/Writing_WebSocket_client_applications
-// https://discuss.atom.io/t/how-to-pass-more-than-one-function-in-a-js-file-to-another-file/33134/4
-// http://www.gorillatoolkit.org/pkg/websocket
-const (
-	//StatusOK means the command/request completed successfully and the payload can be found in the message-field
-	StatusOK = iota
-	//StatusWait means the service is still performing the request
-	StatusWait
-	//StatusFailed means the service failed to perform the request and further info can be found in the message
-	StatusFailed
-)
-
-//Message represents the struct that's sent between the electron client and the service binary
-type Message struct {
-	Version int    `json:"version"`
-	Type    int    `json:"type"`
-	Message string `json:"message"`
-	Status  int    `json:"status"`
-}
-
-var upgrader = websocket.Upgrader{
-	ReadBufferSize:  1024,
-	WriteBufferSize: 1024,
-	CheckOrigin:     func(r *http.Request) bool { return true },
-}
-
-const svcName = "elefontbgsvc"
+const svcName = "elefontbg"
 
 var elog debug.Log
 
@@ -91,7 +54,10 @@ func main() {
 	switch cmd {
 	case "debug":
 		log.Printf("debugging")
-		runSvc(svcName, true)
+		runSvc(svcName, true) //skip the debug run during development, for some reason it wont listen to sigterms
+		// h := &http.Server{Addr: "0.0.0.0:42135"}
+		// http.HandleFunc("/ws", wsHandler)
+		// h.ListenAndServe()
 		return
 	case "install":
 		log.Printf("installing")
@@ -122,7 +88,7 @@ func runSvc(name string, isDebug bool) {
 		}
 	}
 	defer elog.Close()
-	elog.Info(1, fmt.Sprintf("starting %s service", name))
+	elog.Info(1, fmt.Sprintf("starting %s service (%s)", name, buildVersion))
 	run := svc.Run
 	if isDebug {
 		run = debug.Run
@@ -253,10 +219,15 @@ func (e *elefontService) Execute(args []string, r <-chan svc.ChangeRequest, chan
 	changes <- svc.Status{State: svc.Running, Accepts: cmdsAccepted}
 	//do stuff here, like ws :)
 
-	h := &http.Server{Addr: "0.0.0.0:42135"}
+	if err := loadInstalledFonts(); err != nil {
+		elog.Error(1, fmt.Sprintf("could not load installed fonts: %v", err))
+		changes <- svc.Status{State: svc.StopPending}
+		return
+	}
 
+	h := &http.Server{Addr: "0.0.0.0:42135"}
 	http.HandleFunc("/ws", wsHandler)
-	h.ListenAndServe()
+	go h.ListenAndServe()
 
 SVCLOOP:
 	for {
@@ -299,47 +270,4 @@ func startSvc(name string) error {
 		return fmt.Errorf("could not start service: %v", err)
 	}
 	return nil
-}
-
-func wsHandler(w http.ResponseWriter, r *http.Request) {
-	conn, err := upgrader.Upgrade(w, r, nil)
-	if err != nil {
-		log.Printf("%v", err)
-		return
-	}
-	for {
-		msgType, msg, err := conn.ReadMessage()
-		if err != nil {
-			fmt.Println(err)
-			return
-		}
-
-		mess := Message{}
-		err = json.Unmarshal(msg, &mess)
-		if err != nil {
-			log.Printf("could not unmarshal json (%v)", err)
-			continue
-		}
-
-		ans := Message{
-			Type:    mess.Type,
-			Status:  StatusOK,
-			Message: "this is a response",
-			Version: 1,
-		}
-
-		log.Printf("rcv: '%+v'", mess)
-
-		b, err := json.Marshal(ans)
-		if err != nil {
-			log.Printf("could not marshal response: %v", err)
-			continue
-		}
-
-		err = conn.WriteMessage(msgType, b)
-		if err != nil {
-			log.Printf("%v", err)
-			return
-		}
-	}
 }
